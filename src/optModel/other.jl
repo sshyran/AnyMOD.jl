@@ -225,7 +225,7 @@ function createLimitCns!(partLim::OthPart,anyM::anyModel)
 	varToPar_dic = Dict(y => getindex.(filter(z -> z[2] == y,limVar_arr),1) for y in unique(getindex.(limVar_arr,2)))
 
 	# loop over all variables that are subject to any type of limit (except emissions)
-	allKeys_arr = collect(keys(varToPar_dic))
+	allKeys_arr = filter(x -> !occursin("Share",string(x)),collect(keys(varToPar_dic)))
 	cns_dic = Dict{Symbol,cnsCont}()
 	signLim_dic= Dict(:Up => :smaller, :Low => :greater, :Fix => :equal)
 
@@ -423,6 +423,48 @@ function createLimitCns!(partLim::OthPart,anyM::anyModel)
 		typeLim_sym = va in (:emission,) ? "term" : "variable"
 		produceMessage(anyM.options,anyM.report, 2," - Prepared constraints to limit $typeLim_sym $va")
 	end
+
+	# do shares on generation separately, quick and dirty implementation, because feature is methodologically questionable and will not become part of main package
+	allKeysShare_arr = filter(x -> occursin("Share",string(x)),collect(keys(varToPar_dic)))
+	for va in allKeysShare_arr
+		allGen_df = getAllVariables(:gen,anyM)
+		allStIn_df = getAllVariables(:stIn,anyM)
+		allStOut_df = getAllVariables(:stOut,anyM)
+
+		for lim in varToPar_dic[va]
+
+			par_obj = copy(partLim.par[Symbol(va,lim)])
+			agg_tup = tuple(intCol(par_obj.data)...)
+
+			if isempty(agg_tup)
+				grpVar_df = allVar_df
+			else
+				grpGen_df = combine(groupby(convertExcCol(allGen_df),collect(agg_tup)), :var => (x -> sum(x)) => :var)
+				grpStIn_df = combine(groupby(convertExcCol(allStIn_df),collect(agg_tup)), :var => (x -> sum(x)) => :var)
+				grpStOut_df = combine(groupby(convertExcCol(allStOut_df),collect(agg_tup)), :var => (x -> sum(x)) => :var)
+			end
+
+			limit_df = copy(par_obj.data)
+			if size(limit_df,2) != 1
+				limit_df[!,:specGen] = aggDivVar(grpGen_df, limit_df[!,Not(:val)], agg_tup, anyM.sets, aggFilt = agg_tup)
+				limit_df[!,:allGen] = aggDivVar(grpGen_df, limit_df[!,Not(:val)], tuple(filter(x -> x != :Te,collect(agg_tup))...), anyM.sets, aggFilt = agg_tup)
+				limit_df[!,:stIn] = aggDivVar(grpStIn_df, limit_df[!,Not(:val)], tuple(filter(x -> x != :Te,collect(agg_tup))...), anyM.sets, aggFilt = agg_tup)
+				limit_df[!,:stOut] = aggDivVar(grpStOut_df, limit_df[!,Not(:val)], tuple(filter(x -> x != :Te,collect(agg_tup))...), anyM.sets, aggFilt = agg_tup)
+			else
+				limit_df[!,:specGen] .= sum(grpGen_df[!,:var])
+				limit_df[!,:allGen] .= sum(grpGen_df[!,:var])
+				limit_df[!,:stIn] .= sum(grpStIn_df[!,:var])
+				limit_df[!,:stOut] .= sum(grpStOut_df[!,:var])
+			end
+
+			# prepare, scale and save constraints to dictionary
+			limit_df[!,:cnsExpr] = map(x -> x.specGen - x.val * x.allGen - (1-x.val) * (x.stIn-x.stOut), eachrow(limit_df))
+			limit_df = orderDf(limit_df[!,[intCol(limit_df)...,:cnsExpr]])
+			scaleCnsExpr!(limit_df,anyM.options.coefRng,anyM.options.checkRng)
+			cns_dic[Symbol(va,lim)] = cnsCont(limit_df,signLim_dic[lim])
+		end
+	end
+
 
 	# loops over stored constraints outside of threaded loop to create actual jump constraints
 	for cnsSym in keys(cns_dic)

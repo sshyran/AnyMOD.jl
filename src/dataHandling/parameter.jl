@@ -133,6 +133,12 @@ function defineParameter(options::modOptions,report::Array{Tuple,1})
     upHerit_tup = (:Ts_dis => :sum_full, :Ts_expSup => :sum_full, :R_dis => :sum_full, :C => :sum_full, :Te => :sum_full, :M => :sum_full)
     ofHerit_tup = (:Ts_dis => :sum_any,  :Ts_expSup => :sum_any,  :R_dis => :sum_any,  :C => :sum_any,  :Te => :sum_any,  :M => :sum_any)
 
+    # limit share of generation
+    parDef_dic[:genShareUp]  =  (dim = (:Ts_dis, :Ts_expSup, :R_dis, :C, :Te, :M), defVal = nothing, herit = (:Ts_expSup => :up, :Ts_dis => :avg_any, :R_dis => :up, :Te => :up, :Ts_dis => :up), part = :lim)
+    parDef_dic[:genShareLow] =  (dim = (:Ts_dis, :Ts_expSup, :R_dis, :C, :Te, :M), defVal = nothing, herit = (:Ts_expSup => :up, :Ts_dis => :avg_any, :R_dis => :up, :Te => :up, :Ts_dis => :up), part = :lim)
+    parDef_dic[:genShareFix] =  (dim = (:Ts_dis, :Ts_expSup, :R_dis, :C, :Te, :M), defVal = nothing, herit = (:Ts_expSup => :up, :Ts_dis => :avg_any, :R_dis => :up, :Te => :up, :Ts_dis => :up), part = :lim)
+
+
     # actual energy limits on use, generation and storage
     parDef_dic[:useUp]   =  (dim = (:Ts_dis, :Ts_expSup, :R_dis, :C, :Te, :M), defVal = nothing, herit = upHerit_tup, part = :lim)
     parDef_dic[:useLow]  =  (dim = (:Ts_dis, :Ts_expSup, :R_dis, :C, :Te, :M), defVal = nothing, herit = ofHerit_tup, part = :lim)
